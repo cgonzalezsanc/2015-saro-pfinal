@@ -1,0 +1,55 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+<title>Actividades de Ocio y Cultura de la Comunidad de Madrid</title>
+<meta name="keywords" content="" />
+<meta name="description" content="" />
+<link href="/css/style-{{ color }}.css" rel="stylesheet" type="text/css" />
+</head>
+
+<body>
+<div id="header">
+	
+</div>
+<div id="menu">
+    {{ menu_navegacion|safe }}
+</div>
+<div id="content">
+	<div id="left">
+	    <h1>{{ titulo }}</h1><br>
+		{{ contenido|safe }}
+    </div>
+	<div id="right">
+	    <div id="sesion">
+	        <h2>Sesion</h2>
+	        {% if autenticado %}
+                <p>Estas autenticado como {{ usuario }}. </p>
+                <ul>
+                    <li><a href=/{{ usuario }}>Mi Perfil<a></li>
+                    <li><a href=/logout>Cerrar sesion</a></li>
+                </ul>
+            {% else %}
+                <form method="post" action="/login">
+                {% csrf_token %}
+                <table>
+                    <tr><td>Usuario</td>
+                        <td>{{ form.username }}</td></tr>
+                    <tr><td>Contraseña</td>
+                        <td>{{ form.password }}</td></tr>
+                </table>
+                <input type="submit" value="login" />
+                </form>
+            {% endif %}
+        </div>
+        <div id="adicional">
+		    {{ adicional|safe }}
+		</div>
+	</div>
+</div>
+<div id="footer">
+	<p>Copyright &copy; 2015 Carlos Gonzalez</p>
+</div>
+</body>
+</html>

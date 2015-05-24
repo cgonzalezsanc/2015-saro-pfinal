@@ -1,0 +1,265 @@
+# -*- coding: utf-8 -*-
+
+# Vista del Proyecto Finald de Carlos González Sánchez,
+# Grado en Sist. de Teleco
+
+# Imports necesarios
+from bs4 import BeautifulSoup
+from django.contrib.auth import logout
+from django.http import HttpResponse, HttpResponseNotFound
+from django.http import HttpResponseRedirect
+from django.views.decorators.csrf import csrf_exempt
+from formularios import ActuActividadesForm, ElegirActForm, FormFiltrar
+from formularios import CambiarPerfilForm, ComentarioForm
+from functions import RefrescarActs, ImprimirEventos, ImprimirEvento
+from functions import InfoAdicional, ImprimirUsuarios, ActMasProximas
+from functions import BuscarUsuario, ImprimirActElegidas, FiltrarActividades
+from functions import GuardarActividadElegida, CambiarPerfil, ParsearRecurso
+from functions import ComprobarElegida, MenuNavegacion, Render, CanalRSS
+from functions import InfoAyuda, FechaUltimaActu, MostrarRSS, CanalRSSPrinci
+from functions import GuardarActualizacion, ActuNumVisitas, HistorialActus
+from functions import MostrarComentarios, GuardarComentario
+from models import Actividad, Usuario
+
+
+# Funciones que gestionan la respuesta que se envía para una página
+
+
+# Se ejecuta tras hacer click en Cerrar sesión
+def log_out(request):
+    # Cierro la sesión del usuario
+    logout(request)
+    # Redirijo a la página principal
+    return HttpResponseRedirect("/")
+
+
+# Se ejecuta tras autenticarse correctamente
+def successful_login(request):
+    # Redirijo a la página del usuario
+    return HttpResponseRedirect("/" + request.user.username)
+
+
+# Se ejecuta cuando se pide la página principal
+def main_page(request):
+    adicional = ""
+    navegacion = MenuNavegacion(1)
+    titulo = "Pagina principal"
+    # Busco los diez eventos más próximos
+    eventos_proximos = ActMasProximas(10)
+    # Si los hay, imprimo dichos eventos más próximos
+    contenido = "<h2>Eventos mas proximos</h2>\n"
+    if eventos_proximos != 0:
+        contenido += ImprimirEventos(eventos_proximos, request)
+    else:
+        contenido += "<br>No hay eventos proximos</p>\n"
+    # Imprimo las páginas personales disponibles
+    contenido += "<br><h2>Paginas personales disponibles</h2>\n"
+    if len(Usuario.objects.all()) == 0:
+        contenido += "<br>No hay usuarios para mostrar</p>\n"
+    else:
+        contenido += ImprimirUsuarios(Usuario.objects.all())
+    # Muestro el enlace al canal RSS
+    adicional += MostrarRSS("", 1)
+    # Renderizo
+    rendered = Render(request, titulo, navegacion, contenido, adicional)
+    return HttpResponse(rendered)
+
+
+# Se ejecuta cuando se pide el RSS de la pagina principal
+def main_rss(request):
+    # Busco los diez eventos más próximos
+    eventos_proximos = ActMasProximas(10)
+    # Construyo el documento RSS a enviar
+    contenido = CanalRSSPrinci(eventos_proximos)
+    return HttpResponse(contenido, content_type="text/xml")
+
+
+# Se ejecuta cuando se pide el ranking de visitas
+def ranking_visitas(request):
+    actividades = Actividad.objects.all().order_by("-num_visitas")
+    contenido = ImprimirEventos(actividades, request, 1)
+    adicional = ""
+    titulo = "Ranking por numero de visitas"
+    navegacion = MenuNavegacion()
+    rendered = Render(request, titulo, navegacion, contenido, adicional)
+    return HttpResponse(rendered)
+
+
+# Se ejecuta cuando se pide la página de ayuda
+def help(request):
+    adicional = ""
+    navegacion = MenuNavegacion()
+    titulo = "Ayuda\n"
+    # Imprimo la información de ayuda
+    contenido = InfoAyuda()
+    # Renderizo
+    rendered = Render(request, titulo, navegacion, contenido, adicional)
+    return HttpResponse(rendered)
+
+
+# Se ejecuta cuando se quieren mostrar todas las actividades
+@csrf_exempt
+def all_events(request):
+    adicional = ""
+    navegacion = MenuNavegacion()
+    titulo = "Lista de todas las actividades"
+    contenido = ""
+    # Extraigo de la base de datos todas las actividades
+    actividades = Actividad.objects.all()
+    # Si nos llega un POST, tramito la petición
+    if request.method == "POST":
+        if request.POST.get("tipo") == "actualizaracts":
+            url = "http://datos.madrid.es/egob/catalogo/" + \
+                  "206974-0-agenda-eventos-culturales-100.xml"
+            # Refresco la base de datos de actividades
+            contenido += RefrescarActs(url)
+            GuardarActualizacion(request.user.username)
+            actividades = Actividad.objects.all()
+        elif request.POST.get("tipo") == "filtrar":
+            # Filtro las actividades
+            actividades, error = FiltrarActividades(request)
+            if error:
+                contenido += "<p>Error al filtrar las actividades.</p>\n"
+            else:
+                contenido += "<p>Las actividades se han filtrado. </p>\n"
+    # Muestro a los usuarios autenticados el contenido privado
+    if request.user.is_authenticated():
+        # Busco la fecha de la última actualización
+        fecha_ult_act = FechaUltimaActu()
+        # Imprimo el botón para actualizar actividades
+        contenido += ActuActividadesForm()
+        contenido += "Hay " + str(len(actividades)) + " actividades dispo"
+        contenido += "nibles.<br> Ultima actualizacion: " + fecha_ult_act
+        contenido += ". (<a href=/todas/historial>Historial</a>)"
+    contenido += "<br><br>\n"
+    # Muestro el formulario de filtrado
+    contenido += FormFiltrar()
+    # Imprimo las actividades
+    contenido += ImprimirEventos(actividades, request)
+    # Renderizo
+    rendered = Render(request, titulo, navegacion, contenido, adicional)
+    return HttpResponse(rendered)
+
+
+# Se ejecuta cuando se pide el historial de actualizaciones de la base de datos
+def historial_actus(request):
+    adicional = ""
+    titulo = "Historial de actualizaciones"
+    navegacion = MenuNavegacion()
+    contenido = HistorialActus()
+    rendered = Render(request, titulo, navegacion, contenido, adicional)
+    return HttpResponse(rendered)
+
+# Se ejecuta cuando se pide la página de una actividad
+@csrf_exempt
+def event(request, id_actividad):
+    adicional = ""
+    titulo = "Pagina de la actividad " + str(id_actividad)
+    navegacion = MenuNavegacion()
+    contenido = ""
+    # Busco la actividad correspondiente
+    try:
+        actividad = Actividad.objects.get(id=id_actividad)
+    except Actividad.DoesNotExist:
+        # Si no está, mando un mensaje de error
+        titulo += "Error\n"
+        contenido += "<p>Esta actividad no existe</p>"
+        rendered = Render(request, titulo, navegacion, contenido, adicional)
+        return HttpResponseNotFound(rendered)
+    # Si nos llega un POST, tramito la petición
+    if request.method == "POST":
+        if request.POST.get("tipo") == "comentario":
+            print request.POST
+            contenido += GuardarComentario(request, actividad)
+    # Actualizo el numero de visitas
+    ActuNumVisitas(actividad)
+    # Imprimo su información
+    contenido += ImprimirEvento(actividad, 0)
+    # Imprimo la información adicional
+    contenido += InfoAdicional(actividad)
+    # Si está autenticado muestro el botón de elegir si no la eligio ya
+    if request.user.is_authenticated():
+        ya_elegida = ComprobarElegida(request.user, actividad)
+        contenido += "<br><br>"
+        if ya_elegida:
+            contenido += "<p><i>Ya tienes almacenada esta actividad</i></p>\n"
+        else:
+            contenido += ElegirActForm(request.user.username, actividad.id)
+    else:
+        contenido += "<br><br>\t<i>Los visitantes no pueden elegir actividades"
+        contenido += "</i>\n"
+    contenido += "<br><br>"
+    # Muestro los comentarios de la actividad
+    contenido += MostrarComentarios(actividad) + "<br><br>"
+    # Si el usuario está autenticado, le muestro el formulario para añadir un
+    # comentario
+    if request.user.is_authenticated():
+        contenido += ComentarioForm(request.user.username, actividad.id)
+    # Renderizo
+    rendered = Render(request, titulo, navegacion, contenido, adicional)
+    return HttpResponse(rendered)
+
+
+# Se ejecuta cuando se pide el canal RSS de un usuario
+def user_rss(request, nombre_usuario):
+    # Busco el usuario correspondiente al nombre de usuario
+    usuario = BuscarUsuario(nombre_usuario)
+    # Mando mensaje de error si el usuario no existe
+    if not usuario:
+        titulo += "Error\n"
+        navegacion = MenuNavegacion()
+        adicional = ""
+        contenido += "<p>Este usuario no existe</p>"
+        rendered = Render(request, titulo, navegacion, contenido, adicional)
+        return HttpResponseNotFound(rendered)
+    # Construyo el documento RSS a enviar
+    contenido = CanalRSS(usuario)
+    return HttpResponse(contenido, content_type="text/xml")
+
+
+# Se ejecuta cuando se pide la página de un usuario
+@csrf_exempt
+def user(request, recurso):
+    # Parseo el recurso
+    nombre_usuario, pagina, error = ParsearRecurso(recurso)
+    navegacion = MenuNavegacion()
+    contenido = ""
+    adicional = ""
+    # Mando mensaje de error si el recurso no existe
+    if error:
+        titulo += "Error\n"
+        contenido += "<p>Este recurso no existe</p>"
+        rendered = Render(request, titulo, navegacion, contenido, adicional)
+        return HttpResponseNotFound(rendered)
+    usuario = BuscarUsuario(nombre_usuario)
+    # Mando mensaje de error si el usuario no existe
+    if not usuario:
+        titulo += "Error\n"
+        contenido += "<p>Este usuario no existe</p>"
+        rendered = Render(request, titulo, navegacion, contenido, adicional)
+        return HttpResponseNotFound(rendered)
+    # Muestro un enlace con el canal RSS
+    adicional += MostrarRSS(nombre_usuario)
+    # Tramito el formulario si nos llega un POST
+    if request.method == "POST":
+        if request.POST.get("tipo") == "elegiract":
+            contenido += GuardarActividadElegida(request)
+        elif request.POST.get("tipo") == "cambiarperfil":
+            contenido += CambiarPerfil(request)
+            usuario = BuscarUsuario(nombre_usuario)
+    # En el caso de que sea la pagina del usuario que solicita dicha página,
+    # doy la opción de cambiar su perfil
+    if request.user == usuario.nombre:
+        adicional += "<h2>Cambiar perfil</h2>\n"
+        adicional += CambiarPerfilForm(request.user.username)
+    # Busco las actividades elegidas de este usuario
+    contenido += "<h2>Actividades elegidas</h2>\n"
+    contenido += ImprimirActElegidas(usuario, pagina)
+    # Guardo el título
+    if usuario.titulo == "":
+        titulo = "Pagina de " + usuario.nombre.username + "\n"
+    else:
+        titulo = usuario.titulo
+    # Renderizo
+    rendered = Render(request, titulo, navegacion, contenido, adicional)
+    return HttpResponse(rendered)

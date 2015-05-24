@@ -1,0 +1,57 @@
+# -*- coding: utf-8 -*-
+
+from bs4 import BeautifulSoup
+import sys
+import string
+import urllib
+
+
+def GetInfo(evento):
+    # Inicializo los parámetros. De momento todos serán strings
+    titulo = ""
+    gratuito = ""
+    precio = ""
+    larga_duracion = ""
+    fecha = ""
+    fecha_final = ""
+    hora = ""
+    url = ""
+    # Busco cada parámetro y le asigno el valor correspondiente
+    soup = BeautifulSoup(evento)
+    atributos = soup.find_all('atributo')
+    for num_atributo in range(len(atributos)):
+        if atributos[num_atributo]['nombre'] == "TITULO":
+            titulo = atributos[num_atributo].string.decode('utf-8')
+        elif atributos[num_atributo]['nombre'] == "GRATUITO":
+            gratuito = atributos[num_atributo].string
+        elif atributos[num_atributo]['nombre'] == "PRECIO":
+            precio = atributos[num_atributo].string
+        elif atributos[num_atributo]['nombre'] == "EVENTO-LARGA-DURACION":
+            larga_duracion = atributos[num_atributo].string
+        elif atributos[num_atributo]['nombre'] == "FECHA-EVENTO":
+            fecha = atributos[num_atributo].string.decode('utf-8')
+        elif atributos[num_atributo]['nombre'] == "FECHA-FIN-EVENTO":
+            fecha_final = atributos[num_atributo].string.decode('utf-8')
+        elif atributos[num_atributo]['nombre'] == "HORA-EVENTO":
+            hora = atributos[num_atributo].string.decode('utf-8')
+        elif atributos[num_atributo]['nombre'] == "CONTENT-URL":
+            url = atributos[num_atributo].string.decode('utf-8')
+    salida = (titulo, gratuito, precio, larga_duracion, fecha, fecha_final,
+             hora, url)
+    return salida
+
+# Función para actualizar la base de datos de actividades. Primero se parsea la
+# información y luego se guarda, uno a uno, cada evento.
+def refresh_bbdd(xmlURL):
+
+    # Abro el documento XML y lo leo
+    fd = urllib.urlopen(xmlURL)
+    xml_doc = fd.read()
+    # Separo cada uno de los eventos
+    eventos = xml_doc.split("<tipo>Evento</tipo>")
+    # Guardo la información del evento
+    for num_evento in range(1, len(eventos)):
+        Info = GetInfo(eventos[num_evento])
+    return Info
+
+
